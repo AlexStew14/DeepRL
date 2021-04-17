@@ -7,23 +7,25 @@ from DeepRL.Async_Actor_Critic.Utilities import create_actor_critic_model
 
 
 class Worker(mp.Process):
-    def __init__(self, res_queue, env_name, num_actions, num_observations,
+    def __init__(self, res_queue, output_queue, env_name, num_actions, num_observations,
                  global_model, num_episodes, eps, worker_index):
         super().__init__()
         self.res_queue = res_queue
+        self.output_queue = output_queue
         self.global_model = global_model
         self.local_model = create_actor_critic_model(num_inputs=num_observations,
-                                                     num_actions=num_actions, num_hidden=28)
+                                                     num_actions=num_actions, num_hidden=128)
         self.opt = keras.optimizers.Adam(learning_rate=.01)
         self.loss = keras.losses.Huber()
         self.num_actions = num_actions
         self.num_observations = num_observations
-        self.env = gym.make(env_name).unwrapped
+        self.env = gym.make(env_name)
         self.num_episodes = num_episodes
         self.eps = eps
         self.worker_index = worker_index
 
     def run(self):
+        print(f"Worker: {self.worker_index} entered run.")
         gamma = .99
         # Structures for storing trajectory.
         a_probs_hist = []
@@ -32,6 +34,9 @@ class Worker(mp.Process):
         running_reward = 0
 
         for i in range(self.num_episodes):
+            if i % 25 == 0:
+                print(f"Worker: {self.worker_index} on episode: {i}.")
+                print(f'worker: {self.worker_index}, running reward: {running_reward}')
             state = self.env.reset()
             episode_reward = 0
             done = False
@@ -57,7 +62,6 @@ class Worker(mp.Process):
 
                 # Update running reward as weighted sum. 5% for new trajectory, 95% for old sum.
                 running_reward = .05 * episode_reward + .95 * running_reward
-                self.res_queue.put(running_reward)
 
                 # Calculate expected value from rewards.
                 # This is done with gamma discounting, with gamma being the discount rate.
@@ -90,12 +94,15 @@ class Worker(mp.Process):
                 # Backpropagation to update the model.
                 loss_value = sum(actor_losses) + sum(critic_losses)
                 grads = tape.gradient(loss_value, self.local_model.trainable_variables)
-                self.opt.apply_gradients(zip(grads, self.global_model.get_weights()))
-
+                self.res_queue.put(grads)
+                # self.opt.apply_gradients(zip(grads, self.global_model.trainable_weights))
                 # Clear histories since each training step is one trajectory.
                 a_probs_hist.clear()
                 c_val_history.clear()
                 rewards_history.clear()
+                weights = self.output_queue.get()
+                self.local_model.set_weights(weights)
 
         # Indicate to master thread that this worker is done training.
+        print(f"Worker: {self.worker_index} exited run")
         self.res_queue.put(None)

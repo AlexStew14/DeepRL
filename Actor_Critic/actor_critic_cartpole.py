@@ -10,7 +10,6 @@ from matplotlib import pyplot as plt
 # Configuration Parameters
 seed = 42
 gamma = .99
-max_steps_per_episode = 10_000
 number_of_episodes = 400
 env = gym.make('CartPole-v0')
 env.seed(seed)
@@ -43,8 +42,9 @@ def train_model_complete_trajectory(model, env, render_every_episodes=-1):
     for i in range(number_of_episodes):
         state = env.reset()
         episode_reward = 0
+        done = False
         with tf.GradientTape() as tape:
-            for _ in range(max_steps_per_episode):
+            while not done:
                 if render_every_episodes > 0 and episode_count % render_every_episodes == 0:
                     env.render()
 
@@ -61,11 +61,10 @@ def train_model_complete_trajectory(model, env, render_every_episodes=-1):
                 a_probs_hist.append(tf.math.log(action_probs[0, action]))
 
                 state, reward, done, _ = env.step(action)  # Apply the action to the environment
+                if done:
+                    reward = -1
                 rewards_history.append(reward)
                 episode_reward += reward
-
-                if done:
-                    break  # This training generates one complete trajectory per episode.
 
             # Update running reward as weighted sum. 5% for new trajectory, 95% for old sum.
             running_reward = .05 * episode_reward + .95 * running_reward

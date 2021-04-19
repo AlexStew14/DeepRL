@@ -9,43 +9,52 @@ from DeepRL.Async_Actor_Critic.Utilities import create_actor_critic_model
 
 
 class Master:
-    def __init__(self, env_name):
+    def __init__(self, env_name, logging=False):
         self.env = gym.make(env_name)
         self.env_name = env_name
         self.num_actions = self.env.action_space.n
         self.num_observations = self.env.observation_space.shape[0]
         self.global_model = create_actor_critic_model(self.num_observations, self.num_actions, 128)
         self.eps = np.finfo(np.float32).eps.item()
+        self.logging = logging
 
     def train(self, num_processes, num_episodes):
         num_processes = min(num_processes, mp.cpu_count() - 1)
-        print(f'Number of processes: {num_processes}')
+        if self.logging:
+            print(f'Number of processes: {num_processes}')
         response_queue = mp.Queue()
         output_queue = mp.Queue()
         workers = [Worker(env_name=self.env_name, num_actions=self.num_actions, num_episodes=num_episodes,
                           num_observations=self.num_observations,
-                          global_model=self.global_model, eps=self.eps,
+                          global_model=self.global_model, eps=self.eps, logging=self.logging,
                           res_queue=response_queue, output_queue=output_queue, worker_index=i) for i in
                    range(num_processes)]
 
         for i, worker in enumerate(workers):
-            print(f'Starting worker {i}')
+            if self.logging:
+                print(f'Starting worker {i}')
             worker.start()
         optimizer = keras.optimizers.Adam(learning_rate=.01)
         waiting = num_processes
         num_episodes = 0
+        rewards = []
         while waiting != 0:
-            grads = response_queue.get()
+            running_reward, grads = response_queue.get()
+            rewards.append(running_reward)
             if grads is None:
                 waiting -= 1
             else:
-                optimizer.apply_gradients(zip(grads, self.global_model.trainable_variables))
+                optimizer.apply_gradients(
+                    zip(np.array(grads, dtype=object),
+                        self.global_model.trainable_variables))
                 num_episodes += 1
                 weights = self.global_model.get_weights()
                 output_queue.put(weights)
 
         [w.join() for w in workers]
-        print(f"Number of episodes run: {num_episodes}")
+        if self.logging:
+            print(f"Number of episodes run: {num_episodes}")
+        return rewards
 
     def play(self):
         for i in range(5):

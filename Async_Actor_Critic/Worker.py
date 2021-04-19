@@ -8,7 +8,7 @@ from DeepRL.Async_Actor_Critic.Utilities import create_actor_critic_model
 
 class Worker(mp.Process):
     def __init__(self, res_queue, output_queue, env_name, num_actions, num_observations,
-                 global_model, num_episodes, eps, worker_index):
+                 global_model, num_episodes, eps, worker_index, logging):
         super().__init__()
         self.res_queue = res_queue
         self.output_queue = output_queue
@@ -23,9 +23,11 @@ class Worker(mp.Process):
         self.num_episodes = num_episodes
         self.eps = eps
         self.worker_index = worker_index
+        self.logging = logging
 
     def run(self):
-        print(f"Worker: {self.worker_index} entered run.")
+        if self.logging:
+            print(f"Worker: {self.worker_index} entered run.")
         gamma = .99
         # Structures for storing trajectory.
         a_probs_hist = []
@@ -34,7 +36,7 @@ class Worker(mp.Process):
         running_reward = 0
 
         for i in range(self.num_episodes):
-            if i % 25 == 0:
+            if self.logging and i % 25 == 0:
                 print(f"Worker: {self.worker_index} on episode: {i}.")
                 print(f'worker: {self.worker_index}, running reward: {running_reward}')
             state = self.env.reset()
@@ -62,6 +64,7 @@ class Worker(mp.Process):
 
                 # Update running reward as weighted sum. 5% for new trajectory, 95% for old sum.
                 running_reward = .05 * episode_reward + .95 * running_reward
+                # running_reward = episode_reward
 
                 # Calculate expected value from rewards.
                 # This is done with gamma discounting, with gamma being the discount rate.
@@ -94,7 +97,7 @@ class Worker(mp.Process):
                 # Backpropagation to update the model.
                 loss_value = sum(actor_losses) + sum(critic_losses)
                 grads = tape.gradient(loss_value, self.local_model.trainable_variables)
-                self.res_queue.put(grads)
+                self.res_queue.put((running_reward, grads))
                 # self.opt.apply_gradients(zip(grads, self.global_model.trainable_weights))
                 # Clear histories since each training step is one trajectory.
                 a_probs_hist.clear()
@@ -104,5 +107,6 @@ class Worker(mp.Process):
                 self.local_model.set_weights(weights)
 
         # Indicate to master thread that this worker is done training.
-        print(f"Worker: {self.worker_index} exited run")
-        self.res_queue.put(None)
+        if self.logging:
+            print(f"Worker: {self.worker_index} exited run")
+        self.res_queue.put((None, None))

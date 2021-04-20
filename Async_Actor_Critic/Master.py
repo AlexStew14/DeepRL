@@ -5,7 +5,7 @@ from tensorflow import keras
 from matplotlib import pyplot as plt
 import gym
 from DeepRL.Async_Actor_Critic.Worker import Worker
-from DeepRL.Async_Actor_Critic.Utilities import create_actor_critic_model
+from DeepRL.Async_Actor_Critic.Utilities import create_actor_critic_model, accumulate_gradients
 
 
 class Master:
@@ -18,7 +18,7 @@ class Master:
         self.eps = np.finfo(np.float32).eps.item()
         self.logging = logging
 
-    def train(self, num_processes, num_episodes):
+    def train(self, num_processes, num_episodes, gradient_accum_method='weight'):
         num_processes = min(num_processes, mp.cpu_count() - 1)
         if self.logging:
             print(f'Number of processes: {num_processes}')
@@ -36,20 +36,35 @@ class Master:
             worker.start()
         optimizer = keras.optimizers.Adam(learning_rate=.01)
         waiting = num_processes
+        gradient_sync = num_processes
+        gradients = []
         num_episodes = 0
         rewards = []
+        ep_rewards = np.zeros(num_processes)
+
         while waiting != 0:
-            running_reward, grads = response_queue.get()
+            worker_id, running_reward, grads = response_queue.get()
             rewards.append(running_reward)
+            ep_rewards[worker_id] = running_reward
             if grads is None:
                 waiting -= 1
             else:
-                optimizer.apply_gradients(
-                    zip(np.array(grads, dtype=object),
-                        self.global_model.trainable_variables))
+                # accum_gradient = [(acum + grad) for acum, grad in zip(accum_gradient, grads)]
+                gradients.append(grads)
+                gradient_sync -= 1
+                if gradient_sync == 0:
+                    accum_gradient = accumulate_gradients(self.global_model.trainable_variables, gradients,
+                                                          num_processes, ep_rewards, gradient_accum_method)
+                    optimizer.apply_gradients(
+                        zip(accum_gradient, self.global_model.trainable_variables))
+
+                    weights = self.global_model.get_weights()
+                    for i in range(num_processes):
+                        output_queue.put(weights)
+
+                    gradient_sync = num_processes
+                    gradients.clear()
                 num_episodes += 1
-                weights = self.global_model.get_weights()
-                output_queue.put(weights)
 
         [w.join() for w in workers]
         if self.logging:

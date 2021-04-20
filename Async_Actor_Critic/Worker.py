@@ -87,7 +87,7 @@ class Worker(mp.Process):
                 # Backpropagation to update the model.
                 loss_value = sum(actor_losses) + (critic_losses * len(returns))
                 grads = tape.gradient(loss_value, self.local_model.trainable_variables)
-                self.res_queue.put((running_reward, grads))
+                self.res_queue.put((self.worker_index, running_reward, grads))
                 # self.opt.apply_gradients(zip(grads, self.global_model.trainable_weights))
                 # Clear histories since each training step is one trajectory.
                 weights = self.output_queue.get()
@@ -96,4 +96,4 @@ class Worker(mp.Process):
         # Indicate to master thread that this worker is done training.
         if self.logging:
             print(f"Worker: {self.worker_index} exited run")
-        self.res_queue.put((None, None))
+        self.res_queue.put((None, None, None))

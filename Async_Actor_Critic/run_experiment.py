@@ -7,12 +7,12 @@ import time
 
 # run on cpu
 tf.config.set_visible_devices([], 'GPU')
-master_process = Master(env_name='CartPole-v0', logging=False)
+master_process = Master(env_name='CartPole-v0', logging=True)
 
 num_episodes = 300
-num_processes = 4
+num_processes = 16
 start = time.time()
-rewards = master_process.train(num_episodes=num_episodes, num_processes=num_processes)
+rewards = master_process.train(num_episodes=num_episodes, num_processes=num_processes, gradient_accum_method='weight')
 end = time.time()
 total_time = round(end - start, 2)
 # master_process.play()

@@ -1,4 +1,5 @@
 # Actor Critic technique adapted from https://keras.io/examples/rl/actor_critic_cartpole/
+import time
 
 import gym
 import numpy as np
@@ -10,7 +11,7 @@ from matplotlib import pyplot as plt
 # Configuration Parameters
 seed = 42
 gamma = .99
-number_of_episodes = 400
+number_of_episodes = 150
 env = gym.make('CartPole-v0')
 env.seed(seed)
 eps = np.finfo(np.float32).eps.item()  # This finds the smallest number such that 0 + eps > 0.
@@ -30,16 +31,17 @@ model = keras.Model(inputs=inputs, outputs=[actor, critic])
 def train_model_complete_trajectory(model, env, render_every_episodes=-1):
     optimizer = keras.optimizers.Adam(learning_rate=.01)
     huber_loss = keras.losses.Huber()
-    # Structures for storing trajectory.
-    a_probs_hist = []
-    c_val_history = []
-    rewards_history = []
+
     running_reward = 0
     # Stored for plotting
     running_reward_history = []
     episode_count = 0
 
     for i in range(number_of_episodes):
+        # Structures for storing trajectory.
+        a_probs_hist = []
+        c_val_history = []
+        rewards_history = []
         state = env.reset()
         episode_reward = 0
         done = False
@@ -72,51 +74,39 @@ def train_model_complete_trajectory(model, env, render_every_episodes=-1):
 
             # Calculate expected value from rewards.
             # This is done with gamma discounting, with gamma being the discount rate.
-            returns = []
+            returns = np.zeros(len(rewards_history))
             discounted_sum = 0
+            count = len(rewards_history) - 1
             for r in rewards_history[::-1]:  # iterate backwards
                 discounted_sum = r + gamma * discounted_sum
-                returns.insert(0, discounted_sum)
+                returns[count] = discounted_sum
+                count -= 1
 
             # Normalize returns
-            returns = np.array(returns)
             returns = (returns - np.mean(returns)) / (np.std(returns) + eps)
-            returns = returns.tolist()
 
-            history = zip(a_probs_hist, c_val_history, returns)
-            actor_losses = []
-            critic_losses = []
-            # Iterate over trajectory and compute loss values for every action.
-            for log_prob, value, ret in history:
-                # This is the difference in discounted reward of action and the predicted value by the critic.
-                diff = ret - value
-                # Since optimizing the Actor is a gradient ascent problem, the loss is the negative log probability
-                # of the action times the difference between the critic expectation and actual value.
-                actor_losses.append(-log_prob * diff)
-
-                # The critic loss is the huber loss between the actual discounted value of the action
-                # and the predicted value.
-                critic_losses.append(huber_loss(tf.expand_dims(value, 0), tf.expand_dims(ret, 0)))
+            a_probs_hist = tf.convert_to_tensor(a_probs_hist)
+            c_val_history = tf.convert_to_tensor(c_val_history)
+            critic_losses = huber_loss(c_val_history, returns)
+            actor_losses = (-a_probs_hist * (returns - c_val_history))
 
             # Backpropagation to update the model.
-            loss_value = sum(actor_losses) + sum(critic_losses)
+            loss_value = sum(actor_losses) + (critic_losses * len(returns))
             grads = tape.gradient(loss_value, model.trainable_variables)
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
-            # Clear histories since each training step is one trajectory.
-            a_probs_hist.clear()
-            c_val_history.clear()
-            rewards_history.clear()
-
-        # Logging
-        episode_count += 1
-        if episode_count % 10 == 0:
-            print(f'running reward: {running_reward} at episode {episode_count}')
+            # Logging
+            episode_count += 1
+            if episode_count % 10 == 0:
+                print(f'running reward: {running_reward} at episode {episode_count}')
 
     return running_reward_history
 
 
+start = time.time()
 reward_history = train_model_complete_trajectory(model, env)
-
+end = time.time()
+total_time = round(end - start, 2)
 plt.plot(list(range(number_of_episodes)), reward_history)
+plt.title(f'runtime: {total_time}, episodes: {number_of_episodes}')
 plt.show()

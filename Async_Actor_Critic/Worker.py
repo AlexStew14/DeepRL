@@ -29,13 +29,13 @@ class Worker(mp.Process):
         if self.logging:
             print(f"Worker: {self.worker_index} entered run.")
         gamma = .99
-        # Structures for storing trajectory.
-        a_probs_hist = []
-        c_val_history = []
-        rewards_history = []
         running_reward = 0
 
         for i in range(self.num_episodes):
+            # Structures for storing trajectory.
+            a_probs_hist = []
+            c_val_history = []
+            rewards_history = []
             if self.logging and i % 25 == 0:
                 print(f"Worker: {self.worker_index} on episode: {i}.")
                 print(f'worker: {self.worker_index}, running reward: {running_reward}')
@@ -68,41 +68,28 @@ class Worker(mp.Process):
 
                 # Calculate expected value from rewards.
                 # This is done with gamma discounting, with gamma being the discount rate.
-                returns = []
+                returns = np.zeros(len(rewards_history))
                 discounted_sum = 0
+                count = len(rewards_history) - 1
                 for r in rewards_history[::-1]:  # iterate backwards
                     discounted_sum = r + gamma * discounted_sum
-                    returns.insert(0, discounted_sum)
+                    returns[count] = discounted_sum
+                    count -= 1
 
                 # Normalize returns
-                returns = np.array(returns)
                 returns = (returns - np.mean(returns)) / (np.std(returns) + self.eps)
-                returns = returns.tolist()
 
-                history = zip(a_probs_hist, c_val_history, returns)
-                actor_losses = []
-                critic_losses = []
-                # Iterate over trajectory and compute loss values for every action.
-                for log_prob, value, ret in history:
-                    # This is the difference in discounted reward of action and the predicted value by the critic.
-                    diff = ret - value
-                    # Since optimizing the Actor is a gradient ascent problem, the loss is the negative log probability
-                    # of the action times the difference between the critic expectation and actual value.
-                    actor_losses.append(-log_prob * diff)
-
-                    # The critic loss is the huber loss between the actual discounted value of the action
-                    # and the predicted value.
-                    critic_losses.append(self.loss(tf.expand_dims(value, 0), tf.expand_dims(ret, 0)))
+                a_probs_hist = tf.convert_to_tensor(a_probs_hist)
+                c_val_history = tf.convert_to_tensor(c_val_history)
+                critic_losses = self.loss(c_val_history, returns)
+                actor_losses = (-a_probs_hist * (returns - c_val_history))
 
                 # Backpropagation to update the model.
-                loss_value = sum(actor_losses) + sum(critic_losses)
+                loss_value = sum(actor_losses) + (critic_losses * len(returns))
                 grads = tape.gradient(loss_value, self.local_model.trainable_variables)
                 self.res_queue.put((running_reward, grads))
                 # self.opt.apply_gradients(zip(grads, self.global_model.trainable_weights))
                 # Clear histories since each training step is one trajectory.
-                a_probs_hist.clear()
-                c_val_history.clear()
-                rewards_history.clear()
                 weights = self.output_queue.get()
                 self.local_model.set_weights(weights)
 

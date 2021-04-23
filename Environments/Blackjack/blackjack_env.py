@@ -30,19 +30,20 @@ class BlackjackEnv(gym.Env):
         self.deck_index = None
         self.player_index = None
         self.dealer_index = None
+        self.p_sum_large = None
+        self.p_sum_small = None
 
         high = np.zeros((2, 14, 2), dtype=np.int)
         high[:, :, 0] = 13
         high[:, :, 1] = 4
         self.observation_space = gym.spaces.Box(low=np.zeros((2, 14, 2), dtype=np.int), high=high, dtype=np.int)
-        self.done = None
         self.action_space = gym.spaces.Discrete(2)
 
     def step(self, action):
         err_msg = "%r (%s) invalid" % (action, type(action))
         assert self.action_space.contains(action), err_msg
 
-        blackjack = False
+        done = False
         reward = 0
         # Actor decides to hit
         if action == 1:
@@ -51,35 +52,56 @@ class BlackjackEnv(gym.Env):
             self.deck_index += 1
 
             # Aces can be either 1 or 11
-            p_sum_large, p_sum_small = card_utils.sum_of_cards(self.player_hand[:self.player_index, 0])
-            if p_sum_small > 21:
-                self.done = True
+            self.p_sum_large, self.p_sum_small = card_utils.sum_of_cards(self.player_hand[:self.player_index, 0])
+            if self.p_sum_small > 21:
+                done = True
                 reward = -1
-            elif p_sum_large == 21 or p_sum_small == 21:
-                self.done = True
-                blackjack = True
 
-        # Actor decides to stay or hits blackjack
-        if action == 0 or blackjack:
+        # Actor decides to stay
+        if action == 0:
+            done = True
             d_sum_large, d_sum_small = card_utils.sum_of_cards(self.dealer_hand[:self.dealer_index, 0])
-            while dealer_sum < 17:
-        # TODO
+            while d_sum_large < 17:
+                self.dealer_hand[self.dealer_index, :] = card_utils.get_cards_from_deck(self.deck, self.deck_index)
+                self.dealer_index += 1
+                self.deck_index += 1
+                d_sum_large, d_sum_small = card_utils.sum_of_cards(self.dealer_hand[:self.dealer_index, 0])
+
+            d_eff_sum = 0
+            if d_sum_small > 21:
+                reward = 1
+            elif d_sum_large > 21:
+                d_eff_sum = d_sum_small
+            else:
+                d_eff_sum = d_sum_large
+
+            p_eff_sum = 0
+            if reward == 0:
+                if self.p_sum_large > 21:
+                    p_eff_sum = self.p_sum_small
+                else:
+                    p_eff_sum = self.p_sum_large
+
+                if p_eff_sum > d_eff_sum:
+                    reward = 1
+                else:
+                    reward = -1
+
+        return np.array([self.dealer_hand, self.player_hand]), reward, done, {}
 
     def reset(self):
-        self.done = False
         self.deck = card_utils.create_deck()
         card_utils.shuffle_deck(self.deck)
         top_cards = card_utils.get_cards_from_deck(self.deck, list(range(4)))
         self.deck_index = 4
-        self.player_hand = np.array([top_cards[0], top_cards[2]])
+        self.player_hand = np.zeros((14, 2), dtype=np.int)
+        self.player_hand[:2, :] = np.array([top_cards[0], top_cards[2]])
         self.player_index = 2
         # The dealer's first card is hidden to the player
-        self.dealer_hand = np.array([np.array([0, 0]), top_cards[1]])
+        self.dealer_hand = np.zeros((14, 2), dtype=np.int)
+        self.dealer_hand[:2, :] = np.array([np.array([0, 0]), top_cards[1]])
         self.dealer_index = 2
-        padded_state = np.zeros((2, 14, 2), dtype=np.int)
-        state = np.array([self.dealer_hand, self.player_hand])
-        padded_state[:, :state.shape[1], :] = state
-        return padded_state
+        return np.array([self.dealer_hand, self.player_hand])
 
     def render(self, mode='human'):
         pass

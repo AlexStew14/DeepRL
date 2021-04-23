@@ -54,9 +54,3 @@ def sum_of_cards(card_vals):
     ace_one = np.sum(c)
     c[c == 1] = 11
     return np.sum(c), ace_one
-
-
-deck = create_deck()
-print(deck[8:14, 0])
-print(sum_of_cards(deck[8:14, 0]))
-print(deck[8:14, 0])

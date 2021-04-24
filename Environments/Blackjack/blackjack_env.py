@@ -1,4 +1,4 @@
-import card_utils
+from DeepRL.Environments.Blackjack import card_utils
 import gym
 import numpy as np
 
@@ -75,6 +75,9 @@ class BlackjackEnv(gym.Env):
             else:
                 d_eff_sum = d_sum_large
 
+            if self.p_sum_small is None:
+                self.p_sum_large, self.p_sum_small = card_utils.sum_of_cards(self.player_hand[:self.player_index, 0])
+
             p_eff_sum = 0
             if reward == 0:
                 if self.p_sum_large > 21:
@@ -87,7 +90,9 @@ class BlackjackEnv(gym.Env):
                 else:
                     reward = -1
 
-        return np.array([self.dealer_hand, self.player_hand]), reward, done, {}
+        dealer_hand = np.copy(self.dealer_hand)
+        dealer_hand[0, :] = 0
+        return np.array([dealer_hand, self.player_hand]), reward, done, {}
 
     def reset(self):
         self.deck = card_utils.create_deck()
@@ -97,11 +102,18 @@ class BlackjackEnv(gym.Env):
         self.player_hand = np.zeros((14, 2), dtype=np.int)
         self.player_hand[:2, :] = np.array([top_cards[0], top_cards[2]])
         self.player_index = 2
-        # The dealer's first card is hidden to the player
+
         self.dealer_hand = np.zeros((14, 2), dtype=np.int)
-        self.dealer_hand[:2, :] = np.array([np.array([0, 0]), top_cards[1]])
+        self.dealer_hand[:2, :] = np.array([top_cards[1], top_cards[3]])
         self.dealer_index = 2
-        return np.array([self.dealer_hand, self.player_hand])
+        # The dealer's first card is hidden to the player
+        dealer_hand = np.copy(self.dealer_hand)
+        dealer_hand[0, :] = 0
+        return np.array([dealer_hand, self.player_hand])
 
     def render(self, mode='human'):
-        pass
+        print('\n\n STATE\n')
+        dealer_hand = np.copy(self.dealer_hand)
+        dealer_hand[0, :] = 0
+        print(np.array([dealer_hand, self.player_hand]))
+        print('\n\n')

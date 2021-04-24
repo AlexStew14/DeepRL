@@ -4,11 +4,12 @@ import tensorflow as tf
 from tensorflow import keras
 import gym
 from DeepRL.Async_Actor_Critic.Utilities import create_actor_critic_model
+from DeepRL.Environments.Blackjack import blackjack_env
 
 
 class Worker(mp.Process):
     def __init__(self, res_queue, output_queue, env_name, num_actions, num_observations,
-                 global_model, num_episodes, eps, worker_index, logging):
+                 global_model, num_episodes, eps, worker_index, logging, custom_env):
         super().__init__()
         self.res_queue = res_queue
         self.output_queue = output_queue
@@ -19,7 +20,10 @@ class Worker(mp.Process):
         self.loss = keras.losses.Huber()
         self.num_actions = num_actions
         self.num_observations = num_observations
-        self.env = gym.make(env_name)
+        if not custom_env:
+            self.env = gym.make(env_name)
+        else:
+            self.env = blackjack_env.BlackjackEnv()
         self.num_episodes = num_episodes
         self.eps = eps
         self.worker_index = worker_index
@@ -57,8 +61,7 @@ class Worker(mp.Process):
                     a_probs_hist.append(tf.math.log(action_probs[0, action]))
 
                     state, reward, done, _ = self.env.step(action)  # Apply the action to the environment
-                    if done:
-                        reward = -1
+
                     rewards_history.append(reward)
                     episode_reward += reward
 

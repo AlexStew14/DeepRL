@@ -53,4 +53,5 @@ def sum_of_cards(card_vals):
     c[(c == 11) | (c == 12) | (c == 13)] = 10
     ace_one = np.sum(c)
     c[c == 1] = 11
-    return np.sum(c), ace_one
+    ace_eleven = np.sum(c)
+    return ace_eleven, ace_one

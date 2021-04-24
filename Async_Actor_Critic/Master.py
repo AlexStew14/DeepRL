@@ -9,12 +9,17 @@ from DeepRL.Async_Actor_Critic.Utilities import create_actor_critic_model, accum
 
 
 class Master:
-    def __init__(self, env_name, logging=False):
-        self.env = gym.make(env_name)
+    def __init__(self, env_name='CartPole-v0', gym_env=True, logging=False, env=None):
+        if gym_env:
+            self.env = gym.make(env_name)
+        else:
+            self.env = env
+
+        self.custom_env = not gym_env
         self.env_name = env_name
         self.num_actions = self.env.action_space.n
-        self.num_observations = self.env.observation_space.shape[0]
-        self.global_model = create_actor_critic_model(self.num_observations, self.num_actions, 128)
+        self.observation_shape = self.env.observation_space.shape
+        self.global_model = create_actor_critic_model(self.observation_shape, self.num_actions, 128)
         self.eps = np.finfo(np.float32).eps.item()
         self.logging = logging
 
@@ -25,7 +30,7 @@ class Master:
         response_queue = mp.Queue()
         output_queue = mp.Queue()
         workers = [Worker(env_name=self.env_name, num_actions=self.num_actions, num_episodes=num_episodes,
-                          num_observations=self.num_observations,
+                          num_observations=self.observation_shape, custom_env=self.custom_env,
                           global_model=self.global_model, eps=self.eps, logging=self.logging,
                           res_queue=response_queue, output_queue=output_queue, worker_index=i) for i in
                    range(num_processes)]

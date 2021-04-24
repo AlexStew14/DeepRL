@@ -5,10 +5,11 @@ import numpy as np
 
 
 def create_actor_critic_model(num_inputs, num_actions, num_hidden):
-    inputs = layers.Input(shape=(num_inputs,))
+    inputs = layers.Input(shape=list(num_inputs))
     common = layers.Dense(num_hidden, activation='relu')(inputs)
-    actor = layers.Dense(num_actions, activation='softmax')(common)  # Actor layer
-    critic = layers.Dense(1)(common)  # Critic layer
+    flat = layers.Flatten()(common)
+    actor = layers.Dense(num_actions, activation='softmax')(flat)  # Actor layer
+    critic = layers.Dense(1)(flat)  # Critic layer
 
     return keras.Model(inputs=inputs, outputs=[actor, critic])
 
@@ -25,5 +26,5 @@ def accumulate_gradients(trainable_variables, gradient_list, num_processes, rewa
     elif method == 'best':
         best_worker = np.argmax(rewards_array)
         accum_gradient = [(acum + grad) for acum, grad in zip(accum_gradient, gradient_list[best_worker])]
-        
+
     return accum_gradient
